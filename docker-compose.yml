@@ -1,0 +1,205 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bilet-postgres
+    environment:
+      POSTGRES_USER: bilet_user
+      POSTGRES_PASSWORD: bilet_pass_2024
+      POSTGRES_DB: bilet_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bilet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bilet_user -d bilet_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: bilet-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - bilet-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: bilet-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - bilet-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: bilet-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - bilet-network
+
+  # ========== PYTHON SERVISLER ==========
+
+  auth-service:
+    build: ./services/auth-service
+    container_name: auth-service
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - JWT_SECRET_KEY=your-super-secret-jwt-key-change-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  user-service:
+    build: ./services/user-service
+    container_name: user-service
+    ports:
+      - "8002:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  trip-service:
+    build: ./services/trip-service
+    container_name: trip-service
+    ports:
+      - "8003:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  flight-service:
+    build: ./services/flight-service
+    container_name: flight-service
+    ports:
+      - "8004:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  booking-service:
+    build: ./services/booking-service
+    container_name: booking-service
+    ports:
+      - "8005:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  payment-service:
+    build: ./services/payment-service
+    container_name: payment-service
+    ports:
+      - "8006:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  notification-service:
+    build: ./services/notification-service
+    container_name: notification-service
+    ports:
+      - "8007:8000"
+    environment:
+      - DATABASE_URL=postgresql://bilet_user:bilet_pass_2024@postgres:5432/bilet_db
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - bilet-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: bilet-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend:/usr/share/nginx/html
+    restart: always
+    networks:
+      - bilet-network
+
+volumes:
+  postgres_data:
+
+networks:
+  bilet-network:
+    driver: bridge
