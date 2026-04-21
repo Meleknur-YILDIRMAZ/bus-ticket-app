@@ -45,20 +45,9 @@ def generate_booking_ref() -> str:
 
 
 def luhn_check(card_number: str) -> bool:
-    """Luhn algoritması ile kart doğrulama."""
+    """Kart numarası kontrolü (Demo: Sadece 16 hane kontrolü)."""
     clean = card_number.replace(" ", "")
-    if len(clean) != 16:
-        return False
-    total = 0
-    reverse = clean[::-1]
-    for i, digit in enumerate(reverse):
-        n = int(digit)
-        if i % 2 == 1:
-            n *= 2
-            if n > 9:
-                n -= 9
-        total += n
-    return total % 10 == 0
+    return len(clean) == 16 and clean.isdigit()
 
 
 # ──────────────────────────────────────────────
@@ -81,13 +70,11 @@ def process_payment(request: schemas.PaymentRequest, db: Session = Depends(get_d
     card_name   = str(payment_data.get("card_name", ""))
     amount      = float(payment_data.get("amount", 0))
 
-    # Kart doğrulama
+    # Kart doğrulama (Demo için basitleştirdik)
     if not luhn_check(card_number):
         raise HTTPException(status_code=400, detail="Geçersiz kart numarası")
 
-    # Mock 3D Secure — %5 başarısız
-    if random.random() < 0.05:
-        raise HTTPException(status_code=402, detail="3D Secure doğrulaması başarısız")
+    # Mock 3D Secure — Demo için %100 başarılı yapıyoruz
 
     payment_id  = generate_payment_id()
     booking_ref = generate_booking_ref()

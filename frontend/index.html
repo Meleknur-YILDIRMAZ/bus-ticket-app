@@ -66,9 +66,11 @@
         .gender-options { display: flex; gap: 1rem; margin-top: 2rem; }
         .gender-btn { flex: 1; padding: 1.2rem; border-radius: 8px; border: 2px solid #eee; cursor: pointer; transition: 0.3s; font-weight: 700; font-size: 1rem; }
         
-        /* Payment Row Alignment */
-        .form-row-payment { display: flex; gap: 10px; margin-top: 5px; }
-        .form-row-payment .form-group { margin-bottom: 0; }
+        /* Version 2.0 Branding */
+        .footer { background: rgba(93, 82, 99, 0.05); padding: 2.5rem 0; margin-top: 4rem; border-top: 1px solid rgba(155, 138, 165, 0.3); text-align: center; }
+        .footer-text { color: #7A6B82; font-size: 0.95rem; letter-spacing: 0.5px; }
+        .footer-text strong { color: #4A3F4F; font-weight: 600; }
+        .dev-badge { background: linear-gradient(135deg, #9B8AA5, #5D5263); color: white !important; padding: 4px 14px; border-radius: 50px; font-size: 0.75rem; font-weight: 600; margin-left: 12px; box-shadow: 0 4px 12px rgba(155, 138, 165, 0.2); display: inline-block; text-transform: uppercase; letter-spacing: 1px; text-decoration: none; }
     </style>
 </head>
 <body>
@@ -81,6 +83,7 @@
                     <path d="M12 20L20 12L28 20L20 28L12 20Z" fill="white"/>
                 </svg>
                 <span>BiletRez</span>
+                <span class="dev-badge">Meleknur YILDIRMAZ</span>
             </div>
             <div class="nav-links">
                 <a href="#" class="active">Ana Sayfa</a>
@@ -188,6 +191,13 @@
             </form>
         </div>
     </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p class="footer-text">Developed with ❤️ by <strong>Meleknur YILDIRMAZ</strong> | Version 2.0 Stable</p>
+        </div>
+    </footer>
 
     <script src="js/auth.js"></script>
     <script src="js/search.js"></script>

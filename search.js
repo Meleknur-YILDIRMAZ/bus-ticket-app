@@ -102,8 +102,26 @@ async function searchBus() {
     showLoading();
     try {
         const response = await fetch(`/api/trip/bus/search?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&passengers=${passengers}`);
-        const trips = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(`Sunucu hatası: ${response.status}`);
+        }
+
+        const data = await response.json();
         hideLoading();
+
+        // API array, {trips:[...]}, {data:[...]}, {results:[...]} döndürebilir — hepsini yakala
+        const trips = Array.isArray(data) ? data
+                    : Array.isArray(data.trips)   ? data.trips
+                    : Array.isArray(data.data)    ? data.data
+                    : Array.isArray(data.results) ? data.results
+                    : [];
+
+        if (data.detail) {
+            showNotification('Hata: ' + data.detail, 'error');
+            return;
+        }
+
         displayResults(trips, 'bus');
     } catch (error) {
         hideLoading();
@@ -127,12 +145,26 @@ async function searchFlight() {
     showLoading();
     try {
         const response = await fetch(`/api/flight/search?from=${from}&to=${to}&date=${date}&passengers=${passengers}`);
-        const flights = await response.json();
+
+        if (!response.ok) {
+            throw new Error(`Sunucu hatası: ${response.status}`);
+        }
+
+        const data = await response.json();
         hideLoading();
-        if (flights && flights.detail) {
-            showNotification('Hata: ' + flights.detail, 'error');
+
+        if (data.detail) {
+            showNotification('Hata: ' + data.detail, 'error');
             return;
         }
+
+        // API array, {flights:[...]}, {data:[...]}, {results:[...]} döndürebilir — hepsini yakala
+        const flights = Array.isArray(data) ? data
+                      : Array.isArray(data.flights) ? data.flights
+                      : Array.isArray(data.data)    ? data.data
+                      : Array.isArray(data.results) ? data.results
+                      : [];
+
         displayResults(flights, 'flight');
     } catch (error) {
         hideLoading();

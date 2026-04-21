@@ -96,11 +96,32 @@ async function searchBus() {
     if (!from || !to || !date) { showNotification('Lütfen tüm alanları doldurun', 'error'); return; }
     if (from === to) { showNotification('Nereden ve Nereye aynı olamaz', 'error'); return; }
 
+    // ÖNEMLİ: Yeni aramadan önce results section'ını sıfırla
+    resetResultsSection();
+
     showLoading();
     try {
         const response = await fetch(`/api/trip/bus/search?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&passengers=${passengers}`);
-        const trips = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(`Sunucu hatası: ${response.status}`);
+        }
+
+        const data = await response.json();
         hideLoading();
+
+        // API array, {trips:[...]}, {data:[...]}, {results:[...]} döndürebilir — hepsini yakala
+        const trips = Array.isArray(data) ? data
+                    : Array.isArray(data.trips)   ? data.trips
+                    : Array.isArray(data.data)    ? data.data
+                    : Array.isArray(data.results) ? data.results
+                    : [];
+
+        if (data.detail) {
+            showNotification('Hata: ' + data.detail, 'error');
+            return;
+        }
+
         displayResults(trips, 'bus');
     } catch (error) {
         hideLoading();
@@ -118,15 +139,32 @@ async function searchFlight() {
     if (!from || !to || !date) { showNotification('Lütfen tüm alanları doldurun', 'error'); return; }
     if (from === to) { showNotification('Havalimanları aynı olamaz', 'error'); return; }
 
+    // ÖNEMLİ: Yeni aramadan önce results section'ını sıfırla
+    resetResultsSection();
+
     showLoading();
     try {
         const response = await fetch(`/api/flight/search?from=${from}&to=${to}&date=${date}&passengers=${passengers}`);
-        const flights = await response.json();
+
+        if (!response.ok) {
+            throw new Error(`Sunucu hatası: ${response.status}`);
+        }
+
+        const data = await response.json();
         hideLoading();
-        if (flights && flights.detail) {
-            showNotification('Hata: ' + flights.detail, 'error');
+
+        if (data.detail) {
+            showNotification('Hata: ' + data.detail, 'error');
             return;
         }
+
+        // API array, {flights:[...]}, {data:[...]}, {results:[...]} döndürebilir — hepsini yakala
+        const flights = Array.isArray(data) ? data
+                      : Array.isArray(data.flights) ? data.flights
+                      : Array.isArray(data.data)    ? data.data
+                      : Array.isArray(data.results) ? data.results
+                      : [];
+
         displayResults(flights, 'flight');
     } catch (error) {
         hideLoading();
@@ -135,24 +173,72 @@ async function searchFlight() {
     }
 }
 
+/**
+ * Bilet alındıktan sonra ya da yeni arama yapılmadan önce
+ * results section'ını güvenli şekilde sıfırlar.
+ * booking.js veya payment.js'den de çağrılabilir.
+ */
+function resetResultsSection() {
+    let resultsSection = document.getElementById('results');
+    let resultsList = document.getElementById('resultsList');
+
+    // results section DOM'dan silindiyse yeniden oluştur
+    if (!resultsSection) {
+        resultsSection = document.createElement('section');
+        resultsSection.id = 'results';
+        resultsSection.className = 'results-section';
+        resultsSection.style.display = 'none';
+        resultsSection.innerHTML = `
+            <div class="container">
+                <h2>Bulunan Seferler</h2>
+                <div id="resultsList" class="results-list"></div>
+            </div>
+        `;
+        // Hero'nun hemen ardına ekle
+        const hero = document.querySelector('.hero');
+        if (hero && hero.nextSibling) {
+            hero.parentNode.insertBefore(resultsSection, hero.nextSibling);
+        } else {
+            document.body.appendChild(resultsSection);
+        }
+        resultsList = document.getElementById('resultsList');
+    }
+
+    // resultsList DOM'dan silindiyse results içine yeniden ekle
+    if (!resultsList) {
+        const container = resultsSection.querySelector('.container');
+        if (container) {
+            resultsList = document.createElement('div');
+            resultsList.id = 'resultsList';
+            resultsList.className = 'results-list';
+            container.appendChild(resultsList);
+        }
+    }
+
+    // İçeriği temizle, gizle
+    if (resultsList) resultsList.innerHTML = '';
+    resultsSection.style.display = 'none';
+
+    // Önceki seçim alanlarını temizle
+    window.tripsStore = {};
+}
+
 function displayResults(items, type) {
+    // Önce sıfırla / yoksa yeniden oluştur
+    resetResultsSection();
+
     const resultsSection = document.getElementById('results');
     const resultsList = document.getElementById('resultsList');
-    
-    // HATA DÜZELTMESİ: Elementlerin varlığını kontrol et
-    if (!resultsSection) {
-        console.error("results elementi bulunamadı!");
+
+    // Bu noktada her ikisi de kesinlikle var olmalı
+    if (!resultsSection || !resultsList) {
+        console.error('results veya resultsList oluşturulamadı!');
         return;
     }
-    if (!resultsList) {
-        console.error("resultsList elementi bulunamadı!");
-        return;
-    }
-    
+
     resultsSection.style.display = 'block';
     resultsList.innerHTML = '';
-    
-    window.tripsStore = {}; 
+    window.tripsStore = {};
 
     if (!items || items.length === 0) {
         resultsList.innerHTML = '<p class="no-results">Uygun sefer bulunamadı.</p>';
@@ -164,6 +250,7 @@ function displayResults(items, type) {
         const card = createTripCard(item, type);
         resultsList.appendChild(card);
     });
+
     resultsSection.scrollIntoView({ behavior: 'smooth' });
 }
 

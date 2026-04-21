@@ -45,11 +45,13 @@ function luhnCheck(cardNumber) {
 // Process payment
 async function processPayment() {
     const cardNameInput = document.getElementById('cardHolder');
-    const cardNumber = document.getElementById('cardNumber').value;
+    const cardNumberRaw = document.getElementById('cardNumber').value;
     const cardExpiry = document.getElementById('cardExpiry').value;
     const cardCVV = document.getElementById('cardCVV').value;
 
-    const cardName = cardNameInput ? cardNameInput.value : '';
+    const cardName = cardNameInput ? cardNameInput.value.trim() : '';
+    // Boşlukları temizle — backend her zaman boşluksuz bekler
+    const cardNumberClean = cardNumberRaw.replace(/\s/g, '');
 
     // Validations
     if (!/^[a-zA-ZğüşıöçĞÜŞİÖÇ\s]{2,50}$/.test(cardName)) {
@@ -57,16 +59,18 @@ async function processPayment() {
         return;
     }
 
-    if (!luhnCheck(cardNumber)) {
-        showNotification('Geçersiz kart numarası', 'error');
+    if (!luhnCheck(cardNumberRaw)) {
+        showNotification('Geçersiz kart numarası (16 haneli olmalı)', 'error');
         return;
     }
 
     // Check expiry
-    const [month, year] = cardExpiry.split('/');
+    const parts = cardExpiry.split('/');
+    const month = parts[0];
+    const year = parts[1];
     const now = new Date();
     const expiry = new Date(2000 + parseInt(year), parseInt(month) - 1);
-    if (!month || !year || expiry < now) {
+    if (!month || !year || isNaN(expiry.getTime()) || expiry < now) {
         showNotification('Son kullanma tarihi geçersiz', 'error');
         return;
     }
@@ -86,10 +90,11 @@ async function processPayment() {
         if (!window.selectedTrip) {
             throw new Error('Sefer bilgisi bulunamadı');
         }
-        
-        const seatId = window.selectedSeatsByTrip[window.selectedTrip.id] ? 
-                       window.selectedSeatsByTrip[window.selectedTrip.id].id : 0;
-        
+
+        const seatId = window.selectedSeatsByTrip && window.selectedSeatsByTrip[window.selectedTrip.id]
+            ? window.selectedSeatsByTrip[window.selectedTrip.id].id
+            : 0;
+
         const requestBody = {
             trip_id: window.selectedTrip.id,
             trip_type: window.selectedTrip.type || 'bus',
@@ -97,13 +102,13 @@ async function processPayment() {
             passengers: window.currentPassengers || [],
             payment: {
                 card_name: cardName,
-                card_number: cardNumber.replace(/\s/g, ''),
+                card_number: cardNumberClean,   // Her zaman boşluksuz gönder
                 expiry: cardExpiry,
                 cvv: cardCVV,
                 amount: window.selectedTrip.price
             }
         };
-        
+
         const response = await fetch('/api/payment/process', {
             method: 'POST',
             headers: {
@@ -114,21 +119,28 @@ async function processPayment() {
         });
 
         let result = {};
-        
+
         if (response.ok) {
             result = await response.json();
         } else {
             const errorText = await response.text();
             console.error("Payment API Error:", response.status, errorText);
-            throw new Error(`Ödeme işlemi başarısız: ${response.status}`);
+            // Backend'den gelen Türkçe hata mesajını kullanıcıya göster
+            let detail = '';
+            try {
+                const errJson = JSON.parse(errorText);
+                detail = errJson.detail || errorText;
+            } catch {
+                detail = errorText;
+            }
+            throw new Error(detail || `Ödeme işlemi başarısız: ${response.status}`);
         }
 
         // Success Handling
         if (result.status === 'success') {
             closeModal('paymentModal');
             showNotification('Ödeme başarılı! Biletiniz onaylandı.', 'success');
-            
-            // Save booking to localStorage for profile view
+
             const pnrCode = result.booking_ref || ('PNR-' + Math.random().toString(36).substr(2, 6).toUpperCase());
             const newBooking = {
                 id: pnrCode,
@@ -139,31 +151,33 @@ async function processPayment() {
                 company: window.selectedTrip.company || window.selectedTrip.airline,
                 date: window.selectedTrip.departure_time || 'Bugün',
                 time: window.selectedTrip.departure_time || '10:00',
-                seat_numbers: window.currentPassengers && window.currentPassengers[0] ? 
-                              window.currentPassengers[0].seat_number : 'Belirtilmemiş',
+                seat_numbers: window.currentPassengers && window.currentPassengers[0]
+                    ? window.currentPassengers[0].seat_number
+                    : 'Belirtilmemiş',
                 passenger_count: window.currentPassengers ? window.currentPassengers.length : 1,
                 total_price: window.selectedTrip.price,
                 status: 'Aktif'
             };
-            
+
             const existingBookings = JSON.parse(localStorage.getItem('my_bookings') || '[]');
             existingBookings.push(newBooking);
             localStorage.setItem('my_bookings', JSON.stringify(existingBookings));
 
             const savedTrip = { ...window.selectedTrip };
-            const savedPassenger = window.currentPassengers && window.currentPassengers[0] ? 
-                                   { ...window.currentPassengers[0] } : { full_name: cardName, seat_number: 'Belirtilmemiş' };
+            const savedPassenger = window.currentPassengers && window.currentPassengers[0]
+                ? { ...window.currentPassengers[0] }
+                : { full_name: cardName, seat_number: 'Belirtilmemiş' };
 
-            // Clear selections
+            // Seçimleri temizle
             window.selectedSeatsByTrip = {};
             window.currentPassengers = [];
             window.selectedTrip = null;
-            
+
             console.log("Booking successful, rendering success ticket:", pnrCode);
             setTimeout(() => {
                 showSuccessTicket(savedTrip, savedPassenger, newBooking);
             }, 500);
-            
+
         } else {
             throw new Error(result.detail || 'Ödeme işlemi tamamlanamadı');
         }
@@ -177,61 +191,105 @@ async function processPayment() {
 }
 
 function showSuccessTicket(trip, passenger, booking) {
-    const resultsSection = document.getElementById('results');
-    if (!resultsSection) {
-        console.error("results section not found");
-        return;
-    }
+    // ÖNEMLİ: results section'ının innerHTML'ini DEĞİŞTİRME!
+    // resultsList'i korumak için ayrı bir overlay div kullan.
     
-    resultsSection.style.display = 'block';
-    resultsSection.innerHTML = `
-        <div class="ticket-success-container" style="max-width: 550px; margin: 2rem auto; border: 1px solid var(--border-light); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-medium); background: white; animation: fadeIn 0.6s ease;">
-            <div style="background: var(--primary-dusty); color: white; padding: 1.5rem; text-align: center;">
+    // Eski ticket varsa kaldır
+    const existing = document.getElementById('ticketSuccessOverlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ticketSuccessOverlay';
+    overlay.style.cssText = `
+        position: fixed; inset: 0; z-index: 1500;
+        background: rgba(93, 82, 99, 0.6);
+        backdrop-filter: blur(5px);
+        display: flex; align-items: center; justify-content: center;
+        padding: 1rem;
+        animation: fadeIn 0.3s ease;
+    `;
+
+    overlay.innerHTML = `
+        <div style="max-width: 550px; width: 100%; border-radius: 12px; overflow: hidden;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3); background: white;
+                    animation: fadeIn 0.4s ease;">
+
+            <!-- Başlık -->
+            <div style="background: var(--primary-dusty, #9B8AA5); color: white;
+                        padding: 1.5rem; text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 8px;">✓</div>
                 <h2 style="margin: 0; color: white; font-weight: 700;">Biletiniz Onaylandı!</h2>
                 <p style="margin: 5px 0 0; font-size: 0.9rem; opacity: 0.9;">İyi yolculuklar dileriz.</p>
             </div>
-            
+
+            <!-- İçerik -->
             <div style="padding: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px dashed var(--bg-dusty); padding-bottom: 15px; margin-bottom: 15px;">
+                <!-- PNR -->
+                <div style="display: flex; justify-content: space-between;
+                            border-bottom: 2px dashed #eee; padding-bottom: 15px; margin-bottom: 15px;">
                     <div>
-                        <div style="font-size: 0.8rem; color: var(--text-light);">PNR Kodu</div>
-                        <div style="font-weight: 700; font-size: 1.3rem; color: var(--primary-darker);">${booking.id}</div>
+                        <div style="font-size: 0.8rem; color: #999;">PNR Kodu</div>
+                        <div style="font-weight: 700; font-size: 1.3rem; color: #4A3F4F;">${booking.id}</div>
                     </div>
-                </div>
-                
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px; background: var(--bg-light); border-radius: 8px;">
-                    <div style="text-align: left;">
-                        <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary-darker);">${trip.departure_time || booking.time}</div>
-                        <div style="font-size: 0.8rem; color: var(--text-secondary);">${booking.from_location}</div>
-                    </div>
-                    <div style="color: var(--primary-dusty); font-size: 1.5rem;">➞</div>
                     <div style="text-align: right;">
-                        <div style="font-size: 1.2rem; font-weight: 700; color: var(--primary-darker);">${trip.arrival_time || '--:--'}</div>
-                        <div style="font-size: 0.8rem; color: var(--text-secondary);">${booking.to_location}</div>
+                        <div style="font-size: 0.8rem; color: #999;">Toplam Ücret</div>
+                        <div style="font-weight: 700; font-size: 1.3rem; color: #9B8AA5;">${booking.total_price} TL</div>
                     </div>
                 </div>
-                
-                <div style="border: 1px solid var(--border-light); padding: 15px; border-radius: 10px;">
+
+                <!-- Güzergah -->
+                <div style="display: flex; justify-content: space-between; align-items: center;
+                            margin-bottom: 20px; padding: 10px; background: #FAF7FA; border-radius: 8px;">
+                    <div style="text-align: left;">
+                        <div style="font-size: 1.2rem; font-weight: 700; color: #4A3F4F;">${trip.departure_time || booking.time}</div>
+                        <div style="font-size: 0.8rem; color: #7A6B82;">${booking.from_location}</div>
+                    </div>
+                    <div style="color: #9B8AA5; font-size: 1.5rem;">➞</div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 1.2rem; font-weight: 700; color: #4A3F4F;">${trip.arrival_time || '--:--'}</div>
+                        <div style="font-size: 0.8rem; color: #7A6B82;">${booking.to_location}</div>
+                    </div>
+                </div>
+
+                <!-- Detaylar -->
+                <div style="border: 1px solid #eee; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="color: var(--text-secondary);">Firma:</span>
-                        <strong style="color: var(--primary-darker);">${booking.company}</strong>
+                        <span style="color: #999;">Firma:</span>
+                        <strong style="color: #4A3F4F;">${booking.company}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="color: var(--text-secondary);">Yolcu:</span>
-                        <strong style="color: var(--primary-darker);">${passenger.full_name}</strong>
+                        <span style="color: #999;">Yolcu:</span>
+                        <strong style="color: #4A3F4F;">${passenger.full_name}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--text-secondary);">Koltuk No:</span>
-                        <strong style="color: var(--primary-dusty); font-size: 1.2rem;">${passenger.seat_number}</strong>
+                        <span style="color: #999;">Koltuk No:</span>
+                        <strong style="color: #9B8AA5; font-size: 1.2rem;">${passenger.seat_number}</strong>
                     </div>
                 </div>
-                
-                <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 10px;">
-                    <button class="confirm-btn" onclick="showPage('profile')">Biletlerimi Görüntüle</button>
-                    <button class="tab-btn" style="width: 100%; border: 1px solid var(--primary-dusty); color: var(--primary-dusty);" onclick="window.location.href='/'">Ana Sayfaya Dön</button>
+
+                <!-- Butonlar -->
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button onclick="showPage('profile'); document.getElementById('ticketSuccessOverlay').remove();"
+                        style="background: linear-gradient(135deg, #9B8AA5, #5D5263); color: white;
+                               border: none; padding: 14px; border-radius: 12px; font-weight: 700;
+                               cursor: pointer; font-size: 1rem;">
+                        Biletlerimi Görüntüle
+                    </button>
+                    <button onclick="document.getElementById('ticketSuccessOverlay').remove(); resetResultsSection();"
+                        style="background: white; border: 1px solid #9B8AA5; color: #9B8AA5;
+                               padding: 12px; border-radius: 12px; font-weight: 600;
+                               cursor: pointer; font-size: 1rem;">
+                        Yeni Bilet Al
+                    </button>
                 </div>
             </div>
         </div>
     `;
-    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    document.body.appendChild(overlay);
+
+    // Overlay dışına tıklanınca kapat
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) overlay.remove();
+    });
 }
